@@ -1,0 +1,34 @@
+# ---- BUILD STAGE ----
+FROM composer:2.7 AS composer
+WORKDIR /app
+COPY composer.json composer.lock ./
+RUN composer install --no-dev --optimize-autoloader --classmap-authoritative
+
+# ---- FINAL STAGE ----
+FROM laravel-infra-base:latest
+
+# Copy app
+COPY --from=composer /app /var/www/html
+COPY . /var/www/html
+
+# Set permissions
+RUN chown -R www-data:www-data /var/www/html \
+    && chmod -R 755 /var/www/html/storage \
+    && chmod -R 755 /var/www/html/bootstrap/cache
+
+# Harden PHP
+RUN mv /usr/local/etc/php/php.ini-production /usr/local/etc/php/php.ini
+
+# Prod env
+ENV APP_ENV=production \
+    OPcache.validate_timestamps=0 \
+    OPcache.preload=/var/www/html/bootstrap/cache/preload.php
+
+# Drop privileges
+USER www-data
+
+# Healthcheck
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost/health || exit 1
+
+CMD ["supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
