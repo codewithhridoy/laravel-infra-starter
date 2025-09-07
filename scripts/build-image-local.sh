@@ -6,10 +6,11 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../" && pwd)"
 
 echo "🏗️ Building local image..."
 
-# Build base first
-docker build -f "$PROJECT_ROOT/docker/base/Dockerfile.base" -t laravel-infra-base:latest .
+# Build base first — NOTE: path is infra/docker/...
+docker build -f "$PROJECT_ROOT/infra/docker/base/Dockerfile.base" -t laravel-infra-base:latest .
 
 # Build local dev image
-docker build -f "$PROJECT_ROOT/docker/local/Dockerfile.local" -t laravel-app:local-dev .
+docker build -f "$PROJECT_ROOT/infra/docker/local/Dockerfile.local" -t laravel-app:local-dev .
 
 echo "✅ Local image: laravel-app:local-dev"
+
