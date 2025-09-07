@@ -1,0 +1,19 @@
+resources:
+  - ../../base/deployment-base.yaml
+  - ../../base/service.yaml
+  - ../../base/ingress-template.yaml
+
+images:
+  - name: PLACEHOLDER_IMAGE
+    newName: ghcr.io/yourorg/laravel-app
+    newTag: latest
+
+configMapGenerator:
+  - name: app-config
+    env: ../../../values/prod.env
+
+secretGenerator:
+  - name: app-secrets
+    env: ../../../values/prod-secrets.env
+    type: Opaque
+
