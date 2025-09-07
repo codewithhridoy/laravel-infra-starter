@@ -1,0 +1,100 @@
+name: Deploy to Production
+
+on:
+  workflow_dispatch:  # Manual trigger
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+
+env:
+  K8S_CONTEXT: prod-cluster
+  IMAGE_REGISTRY: ghcr.io/${{ github.repository_owner }}
+  APP_NAME: laravel-app
+
+permissions:
+  contents: read
+  deployments: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production  # ← Requires manual approval in GitHub
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v3
+
+      - name: Setup kustomize
+        run: |
+          curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
+          sudo mv kustomize /usr/local/bin/
+
+      - name: Login to GHCR
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_TOKEN }}
+
+      - name: Build and Push Image
+        run: |
+          if [[ ${{ github.ref }} == refs/tags/* ]]; then
+            TAG=${{ github.ref_name }}
+          else
+            TAG=main-${{ github.sha }}
+          fi
+          docker build -f docker/prod/Dockerfile.prod -t ${{ env.IMAGE_REGISTRY }}/${{ env.APP_NAME }}:$TAG .
+          docker push ${{ env.IMAGE_REGISTRY }}/${{ env.APP_NAME }}:$TAG
+
+      - name: Configure kubectl
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.PROD_KUBECONFIG }}" | base64 -d > ~/.kube/config
+          kubectl config use-context ${{ env.K8S_CONTEXT }}
+
+      - name: Deploy to Production
+        run: |
+          cd k8s/overlays/prod
+          if [[ ${{ github.ref }} == refs/tags/* ]]; then
+            TAG=${{ github.ref_name }}
+          else
+            TAG=main-${{ github.sha }}
+          fi
+          sed -i "s|newTag: latest|newTag: $TAG|g" kustomization.yaml
+          kustomize build . | envsubst | kubectl apply -f -
+
+      - name: Wait for Rollout
+        run: |
+          kubectl -n production rollout status deployment/laravel-app --timeout=300s
+
+      - name: Run Healthcheck
+        run: |
+          APP_URL=$(kubectl -n production get configmap app-config -o jsonpath='{.data.APP_URL}')
+          if curl -f -k "$APP_URL/health" > /dev/null 2>&1; then
+            echo "✅ Production healthcheck passed"
+          else
+            echo "❌ Healthcheck failed — rolling back"
+            kubectl -n production rollout undo deployment/laravel-app
+            exit 1
+          fi
+
+      - name: Create Deployment (GitHub)
+        uses: bobheadxi/deployments@v1
+        with:
+          step: finish
+          token: ${{ secrets.GITHUB_TOKEN }}
+          status: success
+          description: "Deployed $TAG to production"
+          env: ''
+
+      - name: Notify Slack
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ job.status }}
+          fields: repo,message,commit,author,action,eventName,ref,workflow
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}

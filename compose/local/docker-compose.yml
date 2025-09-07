@@ -10,7 +10,7 @@ services:
       - XDEBUG_CONFIG=client_host=host.docker.internal
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.app.rule=Host(`${APP_URL#https://}`)"
+      - "traefik.http.routers.app.rule=Host(`${APP_HOST}`)"
       - "traefik.http.routers.app.entrypoints=websecure"
       - "traefik.http.routers.app.tls.certresolver=myresolver"
       - "traefik.http.services.app.loadbalancer.server.port=80"

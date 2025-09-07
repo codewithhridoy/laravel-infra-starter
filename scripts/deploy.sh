@@ -12,7 +12,7 @@ set -a
 source ../.env
 set +a
 
-APP_HOST=$(echo "$APP_URL" | sed -E 's|https?://||')
+APP_HOST=${APP_HOST:-$(echo "$APP_URL" | sed -E 's|https?://||')}
 export APP_HOST
 
 OVERLAY="k8s/overlays/$ENV"

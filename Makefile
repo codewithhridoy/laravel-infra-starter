@@ -1,6 +1,12 @@
-.PHONY: local prod build-local build-prod deploy-local-k8s deploy-prod up-local down-local test help
+.PHONY: validate-env local prod build-local build-prod deploy-local-k8s deploy-prod up-local down-local test help
 
-local: build-local up-local
+validate-env:
+	@if [ -z "$$APP_HOST" ]; then \
+		echo "❌ APP_HOST is not set in .env"; \
+		exit 1; \
+	fi
+
+local: validate-env build-local up-local
 
 prod: build-prod
 

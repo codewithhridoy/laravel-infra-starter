@@ -1,0 +1,80 @@
+name: Deploy to Staging
+
+on:
+  push:
+    branches:
+      - 'release/**'
+      - 'main'
+
+env:
+  K8S_CONTEXT: staging-cluster
+  IMAGE_REGISTRY: ghcr.io/${{ github.repository_owner }}
+  APP_NAME: laravel-app
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: staging  # ← GitHub Environment for secrets + approvals
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v3
+
+      - name: Setup kustomize
+        run: |
+          curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
+          sudo mv kustomize /usr/local/bin/
+
+      - name: Login to GHCR
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_TOKEN }}
+
+      - name: Build and Push Image
+        run: |
+          TAG=${{ github.sha }}
+          docker build -f docker/prod/Dockerfile.prod -t ${{ env.IMAGE_REGISTRY }}/${{ env.APP_NAME }}:$TAG .
+          docker push ${{ env.IMAGE_REGISTRY }}/${{ env.APP_NAME }}:$TAG
+
+      - name: Configure kubectl
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.STAGING_KUBECONFIG }}" | base64 -d > ~/.kube/config
+          kubectl config use-context ${{ env.K8S_CONTEXT }}
+
+      - name: Deploy to Staging
+        run: |
+          cd k8s/overlays/staging
+          # Inject image tag
+          sed -i "s|newTag: latest|newTag: ${{ github.sha }}|g" kustomization.yaml
+          # Deploy
+          kustomize build . | envsubst | kubectl apply -f -
+
+      - name: Wait for Rollout
+        run: |
+          kubectl -n staging rollout status deployment/laravel-app --timeout=300s
+
+      - name: Run Healthcheck
+        run: |
+          APP_URL=$(kubectl -n staging get configmap app-config -o jsonpath='{.data.APP_URL}')
+          if curl -f -k "$APP_URL/health" > /dev/null 2>&1; then
+            echo "✅ Staging healthcheck passed"
+          else
+            echo "❌ Healthcheck failed — rolling back"
+            kubectl -n staging rollout undo deployment/laravel-app
+            exit 1
+          fi
+
+      - name: Notify Slack (on failure)
+        if: failure()
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ job.status }}
+          fields: repo,message,commit,author,action,eventName,ref,workflow
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}
+

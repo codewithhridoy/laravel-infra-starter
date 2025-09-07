@@ -1,22 +1,33 @@
 FROM laravel-infra-base:latest
 
-# Install dev tools
-RUN apk add --no-cache $PHPIZE_DEPS \
-    && pecl install xdebug-3.3.0 \
-    && docker-php-ext-enable xdebug
-
 # Install Composer
 COPY --from=composer:2.7 /usr/bin/composer /usr/bin/composer
+
+# Install Xdebug manually (bypass PECL)
+RUN set -eux; \
+    apk add --no-cache \
+        $PHPIZE_DEPS \
+        linux-headers \
+        ca-certificates \
+        curl \
+    && curl -L https://xdebug.org/files/xdebug-3.3.0.tgz -o /tmp/xdebug.tgz \
+    && tar -xzf /tmp/xdebug.tgz -C /tmp/ \
+    && cd /tmp/xdebug-3.3.0 \
+    && phpize \
+    && ./configure --enable-xdebug \
+    && make \
+    && make install \
+    && docker-php-ext-enable xdebug \
+    && rm -rf /tmp/xdebug* \
+    && apk del $PHPIZE_DEPS
 
 # Enable dev mode
 ENV APP_ENV=local \
     XDEBUG_MODE=develop,debug,coverage \
     PHP_IDE_CONFIG="serverName=localhost"
 
-# Keep source mounted via volume — no COPY
 WORKDIR /var/www/html
 
-# Healthcheck for local
 HEALTHCHECK --interval=30s CMD curl -f http://localhost/health || exit 1
 
 CMD ["supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
