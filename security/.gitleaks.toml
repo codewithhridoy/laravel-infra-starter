@@ -1,0 +1,13 @@
+title = "Laravel Gitleaks Config"
+
+[[rules]]
+id = "laravel-env"
+description = "Laravel .env file"
+regex = '''APP_KEY=base64:[a-zA-Z0-9+/=]{44}'''
+tags = ["key", "laravel"]
+
+[[rules]]
+id = "aws-access-key"
+description = "AWS Access Key"
+regex = '''(A3T[A-Z0-9]|AKIA|AGPA|AIDA|AROA|AIPA|ANPA|ANVA|ASIA)[A-Z0-9]{16}'''
+tags = ["key", "aws"]
